@@ -1,1 +1,124 @@
-The requested file reference is not currently visible. Use files.search or files.list to rediscover the file, then retry with a returned ref_id or file_id.
+'use strict';
+const TEAM_COLORS=['#087ae5','#16a459','#f47d13','#7433bc'];
+const app=document.getElementById('app');
+const route=location.pathname;
+const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const euros=v=>Number.isFinite(Number(v))?'€'+Number(v).toLocaleString('en-IE',{maximumFractionDigits:2}):'—';
+const number=v=>Number.isFinite(Number(v))?Number(v).toLocaleString('en-IE',{maximumFractionDigits:2}):'—';
+const colors=i=>`style="--team:${TEAM_COLORS[i-1]}"`;
+const icons={
+truck:'<path d="M2 5h12v11H2zM14 9h4l4 4v3h-8z"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="18" r="2"/>',
+truckfast:'<path d="M8 6h9l4 5v7h-3M7 18H4M8 10h8v8H8z"/><circle cx="9" cy="19" r="2"/><circle cx="18" cy="19" r="2"/><path d="M1 7h5M0 11h5M2 15h3"/>',
+clock:'<circle cx="12" cy="13" r="9"/><path d="M12 8v5l4 2M8 1h8M12 1v3"/>',
+people:'<circle cx="12" cy="6" r="3"/><path d="M5 20c0-5 2-8 7-8s7 3 7 8M3 11c-2 .4-3 3-3 6M21 11c2 .4 3 3 3 6"/>',
+phone:'<rect x="6" y="2" width="12" height="20" rx="2"/><path d="M10 5h4M11 19h2"/>',
+route:'<circle cx="4" cy="18" r="2"/><path d="M6 18h7q5 0 5-5v-1" stroke-dasharray="2 3"/><path d="M14 7a4 4 0 1 1 8 0c0 2-4 7-4 7s-4-5-4-7z"/>',
+boxes:'<path d="M3 12h8v9H3zM13 12h8v9h-8zM8 3h8v9H8z"/>',
+check:'<circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/>',
+trophy:'<path d="M7 3h10v9a5 5 0 0 1-10 0zM7 5H3v3a4 4 0 0 0 4 4M17 5h4v3a4 4 0 0 1-4 4M12 17v4m-5 0h10"/>',
+camera:'<path d="M3 7h4l2-3h6l2 3h4v13H3z"/><circle cx="12" cy="13" r="4"/>',
+arrow:'<path d="M5 12h14m-6-6 6 6-6 6"/>',
+shield:'<path d="m12 2 9 4v6c0 5-3 8-9 10-6-2-9-5-9-10V6z"/><path d="m8 12 3 3 5-6"/>',
+chart:'<path d="M2 21h20M5 18V9h4v9M12 18V3h4v15M19 18v-7h3v7"/>',
+refresh:'<path d="M20 11a8 8 0 1 0-2 6M20 5v6h-6"/>',
+send:'<path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"/>',
+download:'<path d="M12 3v13m-5-5 5 5 5-5M4 21h16"/>',
+alert:'<path d="M12 3 2 21h20zM12 10v5m0 3v.1"/>',
+lock:'<rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/>',
+};
+function ico(name,cl=''){return `<svg class="${cl}" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icons[name]||icons.truck}</svg>`;}
+const logo=`<svg class="brand-icon" viewBox="0 0 100 70" fill="none" stroke="#fff" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 26h42M2 37h43M15 47h27M50 15h22v31h-9M72 24h10l14 14v9H84"/><circle cx="57" cy="53" r="8"/><circle cx="84" cy="53" r="8"/></svg>`;
+async function api(path,options={}){
+ let res;
+ try{res=await fetch(path,{headers:{'Content-Type':'application/json'},cache:'no-store',...options});}
+ catch(e){throw new Error('Connection lost. Check that you are connected to the same Wi-Fi as the game server.');}
+ let data;
+ try{data=await res.json()}catch(e){throw new Error('The server returned an unreadable response.');}
+ if(!res.ok)throw new Error(data.error||`Server error ${res.status}`);
+ return data;
+}
+const post=(path,obj)=>api(path,{method:'POST',body:JSON.stringify(obj)});
+const fmtSec=v=>{let s=Math.max(0,Math.floor(v));return `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`};
+let current=null,currentAt=Date.now(),currentView='',activeChart='cost';
+function countdown(){if(!current)return 1800;const t=current.timer;return Math.max(0,t.seconds-(t.running?Math.floor((Date.now()-currentAt)/1000):0))}
+function updateClocks(){document.querySelectorAll('[data-countdown]').forEach(x=>x.textContent=fmtSec(countdown()))}
+setInterval(updateClocks,500);
+function shell(title){return `<div class="shell"><header class="masthead"><div class="brand">${logo}<div><strong>Freight Network Lab</strong><small>Plan • Transport • Optimize</small></div></div><div class="timer-board"><div class="timer-caption">${ico('clock')} Game Timer</div><div class="timer-value" data-countdown>30:00</div><div class="timer-sub">Classroom challenge</div></div><div class="stage-head">${title}</div></header><main class="page-content" id="page-content"></main></div>`}
+function teamCards(teams,links){return teams.map(t=>{
+ const i=t.team;
+ const link=links[String(i)];
+ return `<section class="team-card" ${colors(i)}><div class="team-card-head">${ico('people')}<span>Team ${i}</span></div><div class="qr-panel"><a href="${esc(link)}" target="_blank" rel="noopener" aria-label="Open team ${i} submission"><div class="qr-surface"><img src="/api/qr/${i}.png" alt="Real QR code for Team ${i} submission" loading="eager"></div></a><a class="scan-action" href="${esc(link)}" target="_blank" rel="noopener">${ico('phone')}Scan to Submit Results</a><p class="team-note ${t.status}">${t.status==='waiting'?'Awaiting team submission':t.status==='submitted'?'Received · Under review':t.status==='verified'?'✓ Verified by facilitator':'Needs correction · Resubmit'}</p></div></section>`}).join('')}
+function introBoard(){app.innerHTML=shell('Team Result Submission');const dst=document.getElementById('page-content');dst.innerHTML=`<p class="event-copy">Each team scans its own QR code to submit its final results. No app installation required.</p><section class="board-body"><div id="board-main"></div></section><section class="metric-strip"><div class="metric-label">What to Submit<br>(per team)</div><div class="metric-item">${ico('truck')}<div><strong>Number of Trucks</strong><span>Total active vehicles</span></div></div><div class="metric-item">${ico('route')}<div><strong>Distance (km)</strong><span>All driven kilometres</span></div></div><div class="metric-item">${ico('boxes')}<div><strong>Average Load Factor</strong><span>Utilisation (%)</span></div></div></section><div class="skyline"></div><div class="bottom-note">FREIGHT NETWORK LAB · UNIVERSITY-NEUTRAL LOGISTICS STRATEGY CHALLENGE · ONLY VERIFIED PLANS ARE RANKED</div>`}
+function renderBoard(p){const target=document.getElementById('board-main');if(!target)return;
+ if(p.revealed){target.innerHTML=resultsMarkup(p,true);bindChartTabs();}else{target.innerHTML=`<div class="team-grid">${teamCards(p.teams,p.links)}</div>`;}
+ updateClocks();}
+function barRows(items,key,max=undefined){const values=items.map(x=>Number(x[key]));const upper=max??Math.max(...values,1);return items.map(x=>`<div class="bar-line" ${colors(x.team)}><span>Team ${x.team}</span><div class="bar-track"><div class="bar-fill" style="width:${Math.max(0,Math.min(100,100*Number(x[key])/upper))}%"></div></div><span class="bar-val">${key==='cost'?euros(x.cost):key==='load_factor'?number(x.load_factor)+'%':number(x[key])}</span></div>`).join('')}
+function resultsMarkup(p,onBoard){
+ const verified=p.teams.filter(t=>t.status==='verified'&&t.cost!==null);
+ const ranked=[...verified].sort((a,b)=>a.cost-b.cost||a.distance-b.distance||a.trucks-b.trucks||a.team-b.team);
+ const sorted=p.teams.map(t=>({...t,rank:ranked.findIndex(r=>r.team===t.team)+1}));
+ const champ=ranked[0];
+ return `<div class="results-head"><div><h2>Live Competition Dashboard</h2><p>Lowest verified total cost wins. Utilisation is reported for comparison, not ranking.</p></div><span class="status-pill">${ico('shield')} ${verified.length}/4 VERIFIED</span></div>
+ <div class="result-cards">${sorted.map(t=>`<div class="result-card ${t.rank===1?'top':''}" ${colors(t.team)}><div class="result-card-head"><strong>Team ${t.team}</strong><span class="rank-dot">${t.rank?'#'+t.rank:(t.status==='submitted'?'REVIEW':'—')}</span></div><div class="cost-main">${t.rank?euros(t.cost):'—'}</div><div class="result-kpis"><div><strong>${t.rank?t.trucks:'—'}</strong><span>Trucks</span></div><div><strong>${t.rank?number(t.distance):'—'}</strong><span>Km</span></div><div><strong>${t.rank?number(t.load_factor)+'%':'—'}</strong><span>Load factor</span></div></div><div class="result-status">${t.status==='verified'?'✓ Verified solution':t.status==='submitted'?'Submission under review':t.status==='rejected'?'Awaiting revised submission':'Waiting for result'}</div></div>`).join('')}</div>
+ <div class="winner-panel"><div class="winner-feature ${champ?'':'pending'}"><div><small>${champ?'Current leader':'Waiting for verification'}</small><strong>${champ?'Team '+champ.team:'Results coming soon'}</strong><p>${champ?`${euros(champ.cost)} · ${champ.trucks} trucks · ${number(champ.distance)} km`:'Teams appear on the leaderboard after facilitator approval.'}</p></div><div class="cup">${champ?'🏆':'⏳'}</div></div><div class="result-micro"><div><strong>${verified.length} / 4</strong><span>Verified teams</span></div><div><strong>${p.teams.filter(x=>x.status==='submitted').length}</strong><span>Under review</span></div><div><strong>${champ?euros(champ.cost):'—'}</strong><span>Lowest verified cost</span></div><div><strong>${p.open?'OPEN':'CLOSED'}</strong><span>Submission window</span></div></div></div>
+ <div class="charts-grid"><div class="chart-box"><h3>Total Operating Cost (EUR)</h3><div class="chart-rows">${verified.length?barRows(verified,'cost'):'<p class="hint-note">Verified team results will appear here.</p>'}</div><p class="chart-legend">Cost = €500 × active trucks + €1 × total truck-km. Lowest bar wins.</p></div><div class="chart-box"><h3>Compare Operating Indicators</h3><div class="chart-tabrow"><button type="button" data-chart="distance" class="${activeChart==='distance'?'active':''}">Distance</button><button type="button" data-chart="trucks" class="${activeChart==='trucks'?'active':''}">Trucks</button><button type="button" data-chart="load_factor" class="${activeChart==='load_factor'?'active':''}">Load factor</button></div><div class="chart-rows" id="dynamic-chart">${verified.length?barRows(verified,activeChart,activeChart==='load_factor'?100:undefined):'<p class="hint-note">Waiting for verified results.</p>'}</div><p class="chart-legend">All indicators compare the same approved team submissions.</p></div></div>`;
+}
+function bindChartTabs(){document.querySelectorAll('[data-chart]').forEach(x=>x.addEventListener('click',()=>{activeChart=x.dataset.chart;if(current)renderBoard(current)}));}
+async function refreshBoard(){try{const fresh=await api('/api/public');const oldRevealed=current?.revealed;current=fresh;currentAt=Date.now();if(!document.querySelector('.shell'))introBoard();if(route==='/leaderboard'){
+ const target=document.getElementById('board-main');target.innerHTML=resultsMarkup({...current,revealed:true},true);bindChartTabs();
+ }else if(!oldRevealed||fresh.revealed!==oldRevealed){renderBoard(current);}else if(fresh.revealed){renderBoard(current)}else{
+ document.querySelectorAll('.team-card').forEach((card,j)=>{const t=fresh.teams[j];const el=card.querySelector('.team-note');if(el){el.className='team-note '+t.status;el.textContent=t.status==='waiting'?'Awaiting team submission':t.status==='submitted'?'Received · Under review':t.status==='verified'?'✓ Verified by facilitator':'Needs correction · Resubmit';}})
+ }
+ updateClocks();}catch(e){console.warn('Board refresh:',e.message);}}
+function initBoard(){introBoard();refreshBoard();setInterval(refreshBoard,3000)}
+// Mobile team submission
+let teamNumber=0,teamToken='',photoData=null;
+async function initTeam(){teamNumber=Number(route.split('/')[2]);teamToken=new URLSearchParams(location.search).get('token')||'';if(!Number.isInteger(teamNumber)||teamNumber<1||teamNumber>4){app.innerHTML='<div class="login-card">Invalid team invitation.</div>';return;}
+ app.innerHTML=`<div class="phone-page"><div class="phone-top">${ico('truckfast','phone-logo')}<div class="phone-brand"><strong>Freight Network Lab</strong><span>Final Team Submission</span></div></div><div class="phone-wrap" id="phone-view"></div></div>`;
+ await refreshTeam();}
+async function refreshTeam(){let p;try{p=await api(`/api/team/${teamNumber}?token=${encodeURIComponent(teamToken)}`)}catch(e){document.getElementById('phone-view').innerHTML=`<div class="phone-card"><div class="message error">${esc(e.message)}</div><p class="hint-note">Use the QR invitation assigned to your team.</p></div>`;return}
+ current=p;currentAt=Date.now();const target=document.getElementById('phone-view');const locked=p.status==='verified'||!p.open;
+ if(locked||p.status==='submitted'){
+ target.innerHTML=`<div class="phone-card" ${colors(teamNumber)}><div class="phone-intro"><div class="phone-team">Team ${teamNumber}</div><span class="phone-chip">${fmtSec(p.timer.seconds)}</span></div><div class="submit-success"><div class="big-icon">${p.status==='verified'?'✅':p.status==='submitted'?'📨':'🔒'}</div><h2>${p.status==='verified'?'Result verified':p.status==='submitted'?'Submission received':'Submissions closed'}</h2><p>${p.status==='submitted'?'Your results are waiting for facilitator review.':p.status==='verified'?'Your verified result is ready for the leaderboard.':'Ask the facilitator whether submissions can be reopened.'}</p><div class="cost-summary"><div>Submitted<br>operating cost</div><div><strong>${p.trucks!==null?euros(p.trucks*500+p.distance):'—'}</strong><small>€500 × trucks + €1 × km</small></div></div>${p.status==='submitted'?'<button class="secondary-btn" id="edit-submission">Edit your submission</button>':''}${p.review_note?`<div class="message warn">${esc(p.review_note)}</div>`:''}</div></div><p class="phone-foot">The facilitator approves final plans before they are ranked.</p>`;
+ if(p.status==='submitted')document.getElementById('edit-submission').onclick=()=>renderMobileForm(p);
+ }else renderMobileForm(p);
+}
+function renderMobileForm(p){let target=document.getElementById('phone-view');target.innerHTML=`<section class="phone-card" ${colors(teamNumber)}><div class="phone-intro"><div class="phone-team">${ico('people')} Team ${teamNumber}</div><span class="phone-chip"><span data-countdown>${fmtSec(p.timer.seconds)}</span> remaining</span></div><h1>Enter Final Results</h1><p class="phone-sub">One submission per team. Report the numbers from your completed paper plan.</p>${p.status==='rejected'?`<div class="message warn">The facilitator requested a correction. ${esc(p.review_note||'Please check your numbers.')}</div>`:''}
+ <form id="submit-form" novalidate>
+ <div class="field"><label for="truck-count"><span class="field-icon">${ico('truck')}</span> Number of Trucks</label><input id="truck-count" inputmode="numeric" type="number" min="1" max="24" step="1" placeholder="e.g. 3" required value="${p.trucks??''}"><p class="help">Count every active truck once, even if it makes several trips.</p></div>
+ <div class="field"><label for="distance-km"><span class="field-icon">${ico('route')}</span> Total Distance (km)</label><input id="distance-km" inputmode="decimal" type="number" min="0.01" max="30000" step="0.01" placeholder="e.g. 912" required value="${p.distance??''}"><p class="help">Include every driven leg, including empty returns.</p></div>
+ <div class="field"><label for="avg-factor"><span class="field-icon">${ico('boxes')}</span> Average Load Factor (%)</label><input id="avg-factor" inputmode="decimal" type="number" min="0" max="100" step="0.01" placeholder="e.g. 47.2" required value="${p.load_factor??''}"><p class="help">Enter the percentage calculated on your worksheet (0–100).</p></div>
+ <div class="cost-summary"><div>${ico('chart')} Estimated<br>Total Cost</div><div><strong id="live-cost">€0</strong><small>€500 × trucks + €1 × km</small></div></div>
+ <div class="field"><label>${ico('camera')} Team Worksheet (optional)</label><label class="upload-box" for="proof-upload"><strong id="photo-title">📷 Tap to upload a photo</strong><small id="photo-subtitle">Take a photo or choose from your gallery · max 3 MB</small><input type="file" id="proof-upload" accept="image/jpeg,image/png,image/webp" ></label></div>
+ <div id="form-message" aria-live="polite"></div><button class="primary-btn" type="submit" id="submit-btn">${ico('send')} Submit Final Results</button></form></section><p class="phone-foot">Cost ranking is provisional until the facilitator checks the submitted solution.</p>`;
+ const n=document.getElementById('truck-count'),km=document.getElementById('distance-km'),lf=document.getElementById('avg-factor'),el=document.getElementById('live-cost');
+ const cost=()=>{let a=Number(n.value),b=Number(km.value);el.textContent=n.value&&km.value&&Number.isFinite(a)&&Number.isFinite(b)?euros(a*500+b):'€0'};
+ [n,km,lf].forEach(x=>x.addEventListener('input',cost));cost();
+ document.getElementById('proof-upload').addEventListener('change',async e=>{const file=e.target.files?.[0];if(!file)return;const t=document.getElementById('photo-title'),s=document.getElementById('photo-subtitle');t.textContent='Processing photo…';try{photoData=await compressPhoto(file);t.textContent='✓ '+file.name;s.textContent='Photo ready to send (optional).'}catch(err){photoData=null;t.textContent='📷 Tap to upload a photo';s.textContent=err.message;}});
+ document.getElementById('submit-form').addEventListener('submit',async e=>{e.preventDefault();const msg=document.getElementById('form-message');const btn=document.getElementById('submit-btn');msg.innerHTML='';btn.disabled=true;btn.textContent='Submitting…';try{
+ const data={team:teamNumber,token:teamToken,trucks:n.value,distance:km.value,load_factor:lf.value,proof:photoData};
+ const res=await post('/api/submit',data);photoData=null;await refreshTeam();
+ }catch(err){msg.innerHTML=`<div class="message error">${esc(err.message)}</div>`;btn.disabled=false;btn.innerHTML=ico('send')+' Submit Final Results';}});
+}
+function compressPhoto(file){return new Promise((resolve,reject)=>{if(!file.type.startsWith('image/'))return reject(new Error('Select a JPG or PNG photo.'));if(file.size>15_000_000)return reject(new Error('Original photo is too large.'));const reader=new FileReader();reader.onerror=()=>reject(new Error('Could not read the photo.'));reader.onload=()=>{let img=new Image();img.onload=()=>{const maxDim=1400;const s=Math.min(1,maxDim/Math.max(img.width,img.height));const cv=document.createElement('canvas');cv.width=Math.max(1,Math.round(img.width*s));cv.height=Math.max(1,Math.round(img.height*s));cv.getContext('2d').drawImage(img,0,0,cv.width,cv.height);const url=cv.toDataURL('image/jpeg',.76);if(url.length>4_200_000)return reject(new Error('Compressed photo still too large.'));resolve(url)};img.onerror=()=>reject(new Error('Photo format not supported.'));img.src=reader.result};reader.readAsDataURL(file)});}
+// facilitator
+let adminTimer=null;
+async function initAdmin(){app.innerHTML=`<div class="control-page"><header class="control-head"><div><strong>Freight Network Lab · Control Tower</strong><br><span>Private facilitator management · QR, submissions, approval, timer and results</span></div><div class="control-links"><a href="/" target="_blank">Open QR board ↗</a><a href="/leaderboard" target="_blank">Full scoreboard ↗</a></div></header><div id="control-content" class="control-wrap"></div></div>`;await refreshAdmin();adminTimer=setInterval(refreshAdmin,5000)}
+async function refreshAdmin(){try{const p=await api('/api/admin/snapshot');renderAdmin(p)}catch(e){if(e.message.startsWith('Sign in'))renderLogin();else console.warn(e.message)}}
+function renderLogin(){const target=document.getElementById('control-content');if(!target)return;if(target.querySelector('#fac-password'))return;
+ target.innerHTML=`<div class="login-card"><div style="font-size:43px">🔐</div><h1>Facilitator sign-in</h1><p>Enter the password shown in the server terminal. This screen is not accessible to participants.</p><form id="login-form"><input id="fac-password" type="password" placeholder="Facilitator password" required autocomplete="current-password"><button class="primary-btn" type="submit">Sign in</button></form><div id="login-message"></div></div>`;
+ document.getElementById('login-form').onsubmit=async e=>{e.preventDefault();try{await post('/api/admin/login',{password:document.getElementById('fac-password').value});await refreshAdmin()}catch(e){document.getElementById('login-message').innerHTML=`<div class="message error">${esc(e.message)}</div>`}};
+}
+function renderAdmin(p){current=p;currentAt=Date.now();const dst=document.getElementById('control-content');if(!dst)return;
+ dst.innerHTML=`<div class="control-metric-grid"><div class="control-metric"><strong data-countdown>${fmtSec(p.timer.seconds)}</strong><span>${p.timer.running?'Timer running':'Timer paused'}</span></div><div class="control-metric"><strong>${p.teams.filter(x=>x.status!=='waiting').length}/4</strong><span>Teams submitted</span></div><div class="control-metric"><strong>${p.teams.filter(x=>x.status==='verified').length}/4</strong><span>Verified</span></div><div class="control-metric"><strong>${p.revealed?'LIVE':'HIDDEN'}</strong><span>Scoreboard reveal</span></div></div>
+ <div class="control-row" style="margin-top:18px"><section class="control-panel"><h2>Game timer</h2><div class="control-action-row"><button class="tiny-btn good" data-act="start">▶ Start / Resume</button><button class="tiny-btn" data-act="pause">Ⅱ Pause</button><button class="tiny-btn" data-act="reset_timer">↺ Reset timer</button><button class="tiny-btn" data-act="set_minutes" data-min="30">30 min</button><button class="tiny-btn" data-act="set_minutes" data-min="60">60 min</button></div><p class="hint-note">Clock displays on QR board, phone forms and live results. Timer expiry does not automatically lock submissions; use Close submissions.</p></section>
+ <section class="control-panel"><h2>Submissions & results</h2><div class="control-action-row"><button class="tiny-btn ${p.open?'good':''}" data-act="open">Open submissions</button><button class="tiny-btn ${!p.open?'danger':''}" data-act="close">Close submissions</button><button class="tiny-btn ${p.revealed?'gold':'main'}" data-act="${p.revealed?'hide':'reveal'}">${p.revealed?'Hide results':'🏆 Reveal leaderboard'}</button><a class="tiny-btn" href="/api/admin/export.csv">⬇ Export CSV</a></div><p class="hint-note">Only Verified entries are ranked. Check the paper route sheets before approval; a simple metrics form cannot validate route feasibility.</p></section></div>
+ <section class="control-panel"><h2>Review four team submissions</h2><div class="admin-teams">${p.teams.map(t=>`<article class="admin-card" ${colors(t.team)}><div class="admin-card-head">Team ${t.team}</div><div class="admin-card-body"><span class="admin-status ${t.status}">${t.status.toUpperCase()}</span><dl><div><dt>Active trucks</dt><dd>${t.trucks??'—'}</dd></div><div><dt>Total truck-km</dt><dd>${t.distance??'—'}</dd></div><div><dt>Avg. Load Factor</dt><dd>${t.load_factor===null?'—':t.load_factor+'%'}</dd></div><div><dt>Calculated cost</dt><dd>${t.cost===null?'—':euros(t.cost)}</dd></div></dl>${t.proof?`<a class="tiny-btn" target="_blank" href="/api/admin/photo/${t.team}">📷 View worksheet photo</a>`:'<p class="hint-note">No photo attached</p>'}<div class="review-box"><input id="note-${t.team}" placeholder="Review note (optional)" aria-label="Team ${t.team} review note"></div><div class="control-action-row"><button class="tiny-btn good" data-act="verify" data-team="${t.team}" ${t.status!=='submitted'?'disabled':''}>✓ Verify</button><button class="tiny-btn danger" data-act="reject" data-team="${t.team}" ${['submitted','verified'].includes(t.status)?'':'disabled'}>Reject</button><button class="tiny-btn" data-act="reopen" data-team="${t.team}" ${['verified','rejected'].includes(t.status)?'':'disabled'}>Reopen</button></div>${t.review_note?`<p class="hint-note">${esc(t.review_note)}</p>`:''}</div></article>`).join('')}</div></section>
+ <section class="control-panel"><h2>Rehearsal and safety</h2><div class="control-action-row"><button class="tiny-btn" data-act="load_demo">Load four reference plans (as unverified demo)</button><button class="tiny-btn danger" data-act="reset_teams">Clear all team submissions</button></div><p class="hint-note">Demo plans are illustrative: Team 1 = 9 trucks/1716 km, Team 2 = 6/1244, Team 3 = 4/912, Team 4 = 3/912. Clearing is irreversible. Live QR codes are on the projector board. Never publish the facilitator password.</p></section><div id="admin-notice"></div>`;
+ dst.querySelectorAll('[data-act]').forEach(b=>b.addEventListener('click',async()=>{const a=b.dataset.act,team=Number(b.dataset.team)||undefined;const note=team?(document.getElementById('note-'+team)?.value||''):'';
+ if(a==='reset_teams'&&!confirm('Clear all team submissions and remove the current leaderboard?'))return;
+ if(a==='load_demo'&&!confirm('Replace the four team submissions with demo data?'))return;
+ const data={action:a,team,note};if(a==='reset_teams')data.confirm='RESET';if(a==='set_minutes')data.minutes=Number(b.dataset.min);
+ b.disabled=true;try{await post('/api/admin/action',data);await refreshAdmin()}catch(e){alert(e.message);b.disabled=false}}));
+}
+if(route==='/control'){initAdmin()}else if(route.startsWith('/team/')){initTeam()}else{initBoard()}
